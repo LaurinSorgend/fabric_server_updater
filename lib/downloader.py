@@ -15,11 +15,6 @@ async def download_file(
     progress: Progress,
     task_id: TaskID,
 ) -> Path:
-    """
-    Downloads a file to dest, verifying SHA512 after completion.
-    Writes to a .tmp file first; renames atomically on success.
-    Raises ValueError if hash verification fails.
-    """
     tmp = dest.with_suffix(dest.suffix + ".tmp")
 
     try:

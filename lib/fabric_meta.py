@@ -14,15 +14,14 @@ async def get_stable_game_versions(client: httpx.AsyncClient) -> list[str]:
 async def get_latest_loader_version(client: httpx.AsyncClient) -> str:
     resp = await client.get(f"{BASE}/versions/loader")
     resp.raise_for_status()
-    for entry in resp.json():
+    entries = resp.json()
+    for entry in entries:
         if entry.get("stable"):
             return entry["version"]
-    # Fallback: return first entry
-    return resp.json()[0]["version"]
+    return entries[0]["version"]
 
 
 async def get_latest_installer_version(client: httpx.AsyncClient) -> tuple[str, str]:
-    """Returns (version, download_url)."""
     resp = await client.get(f"{BASE}/versions/installer")
     resp.raise_for_status()
     for entry in resp.json():

@@ -53,11 +53,6 @@ def _get_homepage(meta: dict) -> Optional[str]:
 
 
 def scan_mods(server_dir: Path, overrides: dict[str, str] | None = None) -> list[ModInfo]:
-    """
-    Scan the mods/ directory inside server_dir.
-    Returns a list of ModInfo for every .jar found.
-    Skips the backups/ subdirectory.
-    """
     overrides = overrides or {}
     mods_dir = server_dir / "mods"
     if not mods_dir.is_dir():
@@ -66,12 +61,8 @@ def scan_mods(server_dir: Path, overrides: dict[str, str] | None = None) -> list
     results: list[ModInfo] = []
 
     for jar in sorted(mods_dir.glob("*.jar")):
-        # Skip anything inside backups
-        try:
-            jar.relative_to(server_dir / "backups")
+        if jar.is_relative_to(server_dir / "backups"):
             continue
-        except ValueError:
-            pass
 
         sha1, sha512 = _compute_hashes(jar)
         meta = _extract_mod_json(jar)
@@ -99,7 +90,6 @@ def scan_mods(server_dir: Path, overrides: dict[str, str] | None = None) -> list
                 homepage=_get_homepage(meta),
             )
 
-        # Apply overrides
         if jar.name in overrides:
             mod_info.modrinth_project_id = overrides[jar.name]
 

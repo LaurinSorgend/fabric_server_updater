@@ -11,10 +11,6 @@ def create_backup(
     mods_to_backup: list[Path],
     fabric_jar: Path | None = None,
 ) -> Path:
-    """
-    Creates a timestamped backup of the given mod files and optionally the Fabric JAR.
-    Returns the path to the backup directory created.
-    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = backup_dir / timestamp
     dest.mkdir(parents=True, exist_ok=True)
@@ -33,13 +29,10 @@ def create_backup(
 
 
 def find_fabric_jar(server_dir: Path) -> Path | None:
-    """Return the Fabric server launcher JAR if found."""
-    # New-style: fabric-server-mc.X.Y.Z-loader.A.B.C-launcher.D.E.F.jar
-    matches = list(server_dir.glob("fabric-server-mc.*.jar"))
-    if matches:
-        return matches[0]
-    # Old-style
-    old = server_dir / "fabric-server-launch.jar"
-    if old.exists():
-        return old
+    versioned_jars = list(server_dir.glob("fabric-server-mc.*.jar"))
+    if versioned_jars:
+        return versioned_jars[0]
+    legacy_jar = server_dir / "fabric-server-launch.jar"
+    if legacy_jar.exists():
+        return legacy_jar
     return None

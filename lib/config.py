@@ -21,9 +21,7 @@ class Config:
     fabric_installer_version: str
     user_agent: str = "fabric-updater/1.0 (github.com/user/fabric-updater)"
     backup_dir: Optional[Path] = None
-    # filename -> modrinth_project_id for mods not downloaded from Modrinth
     overrides: dict[str, str] = field(default_factory=dict)
-    # filename -> list of MC versions the mod is known to support (use ["*"] for all versions)
     mc_compat_overrides: dict[str, list[str]] = field(default_factory=dict)
 
     def __post_init__(self):

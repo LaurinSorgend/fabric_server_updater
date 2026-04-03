@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""
-Fabric Server Updater — update your Fabric server JAR and mods from Modrinth.
-
-Usage:
-  python updater.py check           # report available updates, no downloads
-  python updater.py update          # interactive full update
-  python updater.py update-fabric   # update Fabric server JAR only
-  python updater.py update-mods     # update mods only
-  python updater.py check-mc VER    # check if all mods support a MC version
-  python updater.py config          # show current configuration
-"""
 from __future__ import annotations
 
 import argparse
@@ -35,10 +24,6 @@ from lib.update_planner import UpdatePlan, ModUpdate
 
 console = Console()
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_client(user_agent: str) -> httpx.AsyncClient:
     return httpx.AsyncClient(
@@ -114,15 +99,10 @@ def _summarise_plan(plan: UpdatePlan) -> None:
         console.print(f"\n[bold green]{', '.join(parts)} can be updated.[/bold green]")
 
 
-# ---------------------------------------------------------------------------
-# Core async gather logic
-# ---------------------------------------------------------------------------
-
 async def _gather_update_info(
     config: cfg_module.Config,
     include_snapshots: bool = False,
 ) -> tuple[UpdatePlan, list[mod_scanner.ModInfo]]:
-    """Fetch all update info and return (plan, mods)."""
     mods = mod_scanner.scan_mods(config.server_dir, config.overrides)
 
     async with _make_client(config.user_agent) as client:
@@ -162,7 +142,6 @@ async def _apply_updates(
     selected_mod_updates: list[ModUpdate],
     dry_run: bool,
 ) -> None:
-    """Download and apply selected updates."""
     if dry_run:
         console.print("\n[yellow][DRY RUN] No files will be changed.[/yellow]")
         if update_fabric and plan.fabric_update and plan.fabric_update.is_update:
@@ -193,7 +172,6 @@ async def _apply_updates(
             TransferSpeedColumn(),
             console=console,
         ) as progress:
-            # Download Fabric JAR
             if update_fabric and plan.fabric_update and plan.fabric_update.is_update:
                 fu = plan.fabric_update
                 jar_name = (
@@ -205,30 +183,25 @@ async def _apply_updates(
                 task = progress.add_task(f"Fabric JAR ({jar_name})", total=None)
                 await dl_mod.download_file(client, fu.download_url, dest, "", progress, task)
 
-                # Remove old JAR
                 if fabric_jar and fabric_jar.exists() and fabric_jar != dest:
                     fabric_jar.unlink()
 
-                # Update config
                 config.fabric_loader_version = fu.latest_loader
                 config.fabric_installer_version = fu.latest_installer
                 config.save()
                 console.print(f"[green]✓[/green] Fabric JAR updated.")
 
-            # Download mod updates
             for mu in selected_mod_updates:
                 if not mu.download_url:
                     console.print(f"[yellow]⚠[/yellow] No download URL for {mu.mod.mod_name}, skipping.")
                     continue
 
-                # Determine destination filename from URL
                 url_filename = mu.download_url.split("?")[0].rsplit("/", 1)[-1]
                 dest = config.server_dir / "mods" / url_filename
                 task = progress.add_task(f"{mu.mod.mod_name} {mu.latest_version_number}", total=None)
 
                 try:
                     await dl_mod.download_file(client, mu.download_url, dest, mu.file_sha512, progress, task)
-                    # Remove old JAR if filename changed
                     if mu.mod.path != dest and mu.mod.path.exists():
                         mu.mod.path.unlink()
                     console.print(f"[green]✓[/green] {mu.mod.mod_name} → {mu.latest_version_number}")
@@ -333,7 +306,6 @@ async def cmd_check_mc(args: argparse.Namespace, config: cfg_module.Config) -> N
     table.add_column("Status")
     table.add_column("Note")
 
-    # Build the full set of manually-overridden filenames for this MC version
     force_compatible: set[str] = set(args.force_compatible)
     for filename, versions in config.mc_compat_overrides.items():
         if "*" in versions or candidate in versions:
@@ -391,10 +363,6 @@ async def cmd_config(args: argparse.Namespace, config: cfg_module.Config) -> Non
     console.print(f"\n[dim]Config file: {cfg_module.CONFIG_FILE.resolve()}[/dim]")
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="updater",
@@ -450,8 +418,6 @@ async def main(args: argparse.Namespace, config: cfg_module.Config) -> None:
 
 
 if __name__ == "__main__":
-    # Config setup (may use questionary interactively) must happen BEFORE
-    # asyncio.run() to avoid nested event loop conflicts.
     parser = build_parser()
     args = parser.parse_args()
 
