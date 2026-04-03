@@ -1,6 +1,6 @@
 # Fabric Server Updater
 
-A CLI tool to keep your Fabric Minecraft server up to date — server JAR and mods.
+A CLI tool to keep your Fabric Minecraft server up to date - server JAR and mods.
 
 ## Requirements
 
