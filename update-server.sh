@@ -28,12 +28,12 @@ rcon "stop"
 
 echo "==> Waiting for server to shut down..."
 while rcon "" 2>/dev/null; do
-    sleep 2
+    sleep 10
 done
 echo "    Server offline."
 
 echo "==> Updating mods..."
-"$PYTHON" "$UPDATER_DIR/updater.py" update --yes --server-dir "$SERVER_DIR"
+"$PYTHON" "$UPDATER_DIR/updater.py" --yes --server-dir "$SERVER_DIR" update
 
 echo "==> Starting server..."
 cd "$SERVER_DIR"
