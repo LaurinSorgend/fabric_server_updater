@@ -24,6 +24,22 @@ from lib.update_planner import UpdatePlan, ModUpdate
 
 console = Console()
 
+_START_SCRIPT_NAMES = ("start.sh", "start.bat", "run.sh", "run.bat")
+
+
+def _patch_start_scripts(server_dir: Path, old_jar_name: str | None, new_jar_name: str) -> None:
+    if not old_jar_name or old_jar_name == new_jar_name:
+        return
+    for script_name in _START_SCRIPT_NAMES:
+        script = server_dir / script_name
+        if not script.exists():
+            continue
+        text = script.read_text(encoding="utf-8")
+        if old_jar_name not in text:
+            continue
+        script.write_text(text.replace(old_jar_name, new_jar_name), encoding="utf-8")
+        console.print(f"[dim]Updated {script_name}: {old_jar_name} → {new_jar_name}[/dim]")
+
 
 def _make_client(user_agent: str) -> httpx.AsyncClient:
     return httpx.AsyncClient(
@@ -145,12 +161,23 @@ async def _apply_updates(
     if dry_run:
         console.print("\n[yellow][DRY RUN] No files will be changed.[/yellow]")
         if update_fabric and plan.fabric_update and plan.fabric_update.is_update:
-            console.print(f"  Would download Fabric JAR → {config.server_dir}")
+            fu = plan.fabric_update
+            old_jar = backup_mod.find_fabric_jar(config.server_dir)
+            new_jar_name = (
+                f"fabric-server-mc.{fu.mc_version}"
+                f"-loader.{fu.latest_loader}"
+                f"-launcher.{fu.latest_installer}.jar"
+            )
+            console.print(f"  Would download Fabric JAR → {config.server_dir / new_jar_name}")
+            if old_jar:
+                console.print(f"  Would delete old JAR: {old_jar.name}")
+            for script_name in _START_SCRIPT_NAMES:
+                if (config.server_dir / script_name).exists():
+                    console.print(f"  Would patch {script_name}: {old_jar.name if old_jar else '?'} → {new_jar_name}")
         for mu in selected_mod_updates:
             console.print(f"  Would update: {mu.mod.mod_name} → {mu.latest_version_number}")
         return
 
-    # Backup
     fabric_jar = backup_mod.find_fabric_jar(config.server_dir) if update_fabric else None
     mod_paths = [mu.mod.path for mu in selected_mod_updates]
 
@@ -183,8 +210,10 @@ async def _apply_updates(
                 task = progress.add_task(f"Fabric JAR ({jar_name})", total=None)
                 await dl_mod.download_file(client, fu.download_url, dest, "", progress, task)
 
-                if fabric_jar and fabric_jar.exists() and fabric_jar != dest:
-                    fabric_jar.unlink()
+                if fabric_jar and fabric_jar.resolve() != dest.resolve():
+                    fabric_jar.unlink(missing_ok=True)
+
+                _patch_start_scripts(config.server_dir, fabric_jar.name if fabric_jar else None, jar_name)
 
                 config.fabric_loader_version = fu.latest_loader
                 config.fabric_installer_version = fu.latest_installer
