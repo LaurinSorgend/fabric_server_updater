@@ -84,6 +84,36 @@ async def get_latest_versions(
     return data  # { sha512: latest_version_object }
 
 
+async def get_project(client: httpx.AsyncClient, project_id_or_slug: str) -> dict:
+    """GET /project/{id|slug} — fetch project metadata."""
+    return await _get(client, f"{BASE}/project/{project_id_or_slug}")
+
+
+async def get_latest_version_for_project(
+    client: httpx.AsyncClient,
+    project_id_or_slug: str,
+    mc_version: str,
+) -> dict | None:
+    """
+    GET /project/{id}/version — fetch the latest fabric version for a given MC version.
+    Returns the version object or None if no compatible version exists.
+    """
+    try:
+        versions = await _get(
+            client,
+            f"{BASE}/project/{project_id_or_slug}/version",
+            params={
+                "loaders": _json.dumps(["fabric"]),
+                "game_versions": _json.dumps([mc_version]),
+            },
+        )
+    except httpx.HTTPStatusError:
+        return None
+    if not versions:
+        return None
+    return versions[0]
+
+
 async def check_mc_compat(
     client: httpx.AsyncClient,
     mods: list[ModInfo],
