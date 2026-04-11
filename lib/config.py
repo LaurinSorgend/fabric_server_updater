@@ -17,8 +17,9 @@ _NEW_JAR_PATTERN = re.compile(
 class Config:
     server_dir: Path
     minecraft_version: str
-    fabric_loader_version: str
-    fabric_installer_version: str
+    fabric_loader_version: str = ""
+    fabric_installer_version: str = ""
+    mode: str = "server"  # "server" or "client"
     user_agent: str = "fabric-updater/1.0 (github.com/user/fabric-updater)"
     backup_dir: Optional[Path] = None
     overrides: dict[str, str] = field(default_factory=dict)
@@ -37,6 +38,7 @@ class Config:
             "minecraft_version": self.minecraft_version,
             "fabric_loader_version": self.fabric_loader_version,
             "fabric_installer_version": self.fabric_installer_version,
+            "mode": self.mode,
             "user_agent": self.user_agent,
             "backup_dir": str(self.backup_dir),
             "overrides": self.overrides,
@@ -50,13 +52,32 @@ class Config:
         return cls(
             server_dir=Path(data["server_dir"]),
             minecraft_version=data["minecraft_version"],
-            fabric_loader_version=data["fabric_loader_version"],
-            fabric_installer_version=data["fabric_installer_version"],
+            fabric_loader_version=data.get("fabric_loader_version", ""),
+            fabric_installer_version=data.get("fabric_installer_version", ""),
+            mode=data.get("mode", "server"),
             user_agent=data.get("user_agent", "fabric-updater/1.0"),
             backup_dir=Path(data["backup_dir"]) if data.get("backup_dir") else None,
             overrides=data.get("overrides", {}),
             mc_compat_overrides=data.get("mc_compat_overrides", {}),
         )
+
+
+def detect_mc_version_from_instance(instance_dir: Path) -> str | None:
+    """
+    Try to detect MC version from a Prism/MultiMC mmc-pack.json.
+    Checks both the given directory and its parent (in case user pointed to .minecraft/).
+    """
+    for candidate in (instance_dir, instance_dir.parent):
+        mmc_pack = candidate / "mmc-pack.json"
+        if mmc_pack.exists():
+            try:
+                data = json.loads(mmc_pack.read_text())
+                for component in data.get("components", []):
+                    if component.get("uid") == "net.minecraft":
+                        return component.get("version")
+            except Exception:
+                pass
+    return None
 
 
 def detect_fabric_versions(server_dir: Path) -> tuple[str, str, str] | None:
@@ -75,44 +96,69 @@ def detect_fabric_versions(server_dir: Path) -> tuple[str, str, str] | None:
 
 
 def create_config_interactively(config_path: Path = CONFIG_FILE) -> Config:
-    """Prompt the user for server_dir, auto-detect the rest, save and return Config."""
+    """Prompt the user for configuration, save and return Config."""
     import questionary
     from rich.console import Console
 
     console = Console()
 
-    console.print("[bold cyan]Fabric Server Updater — First Run Setup[/bold cyan]")
+    console.print("[bold cyan]Fabric Updater — First Run Setup[/bold cyan]")
     console.print("No configuration found. Let's set things up.\n")
 
-    server_dir_str = questionary.path(
-        "Path to your Fabric server directory:",
-        only_directories=True,
+    mode = questionary.select(
+        "What are you updating?",
+        choices=[
+            questionary.Choice("Fabric server", value="server"),
+            questionary.Choice("Modded client instance (Prism, MultiMC, …)", value="client"),
+        ],
     ).ask()
 
-    if not server_dir_str:
+    if not mode:
         raise SystemExit("Setup cancelled.")
 
-    server_dir = Path(server_dir_str).expanduser().resolve()
-    if not server_dir.is_dir():
-        console.print(f"[red]Directory not found: {server_dir}[/red]")
+    if mode == "server":
+        dir_prompt = "Path to your Fabric server directory:"
+    else:
+        dir_prompt = "Path to your instance's .minecraft directory (where mods/ lives):"
+
+    dir_str = questionary.path(dir_prompt, only_directories=True).ask()
+    if not dir_str:
+        raise SystemExit("Setup cancelled.")
+
+    instance_dir = Path(dir_str).expanduser().resolve()
+    if not instance_dir.is_dir():
+        console.print(f"[red]Directory not found: {instance_dir}[/red]")
         raise SystemExit(1)
 
-    versions = detect_fabric_versions(server_dir)
-    if versions:
-        mc, loader, installer = versions
-        console.print(f"[green]Detected:[/green] MC {mc}, Loader {loader}, Installer {installer}")
+    if mode == "server":
+        versions = detect_fabric_versions(instance_dir)
+        if versions:
+            mc, loader, installer = versions
+            console.print(f"[green]Detected:[/green] MC {mc}, Loader {loader}, Installer {installer}")
+        else:
+            console.print("[yellow]Could not auto-detect versions from server JAR filename.[/yellow]")
+            mc = questionary.text("Minecraft version (e.g. 1.21.1):").ask() or ""
+            loader = questionary.text("Fabric loader version (e.g. 0.16.0):").ask() or ""
+            installer = questionary.text("Fabric installer version (e.g. 1.0.1):").ask() or ""
+        cfg = Config(
+            server_dir=instance_dir,
+            minecraft_version=mc,
+            fabric_loader_version=loader,
+            fabric_installer_version=installer,
+            mode="server",
+        )
     else:
-        console.print("[yellow]Could not auto-detect versions from server JAR filename.[/yellow]")
-        mc = questionary.text("Minecraft version (e.g. 1.21.1):").ask() or ""
-        loader = questionary.text("Fabric loader version (e.g. 0.16.0):").ask() or ""
-        installer = questionary.text("Fabric installer version (e.g. 1.0.1):").ask() or ""
+        mc = detect_mc_version_from_instance(instance_dir)
+        if mc:
+            console.print(f"[green]Detected MC version:[/green] {mc}")
+        else:
+            mc = questionary.text("Minecraft version (e.g. 1.21.4):").ask() or ""
+        cfg = Config(
+            server_dir=instance_dir,
+            minecraft_version=mc,
+            mode="client",
+        )
 
-    cfg = Config(
-        server_dir=server_dir,
-        minecraft_version=mc,
-        fabric_loader_version=loader,
-        fabric_installer_version=installer,
-    )
     cfg.save(config_path)
     console.print(f"[green]Config saved to {config_path}[/green]\n")
     return cfg

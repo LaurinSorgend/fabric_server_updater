@@ -122,11 +122,14 @@ async def _gather_update_info(
     mods = mod_scanner.scan_mods(config.server_dir, config.overrides)
 
     async with _make_client(config.user_agent) as client:
-        with console.status("[cyan]Fetching Fabric meta…[/cyan]"):
-            latest_loader, (latest_installer, _installer_url) = await asyncio.gather(
-                fabric_meta.get_latest_loader_version(client),
-                fabric_meta.get_latest_installer_version(client),
-            )
+        if config.mode == "server":
+            with console.status("[cyan]Fetching Fabric meta…[/cyan]"):
+                latest_loader, (latest_installer, _installer_url) = await asyncio.gather(
+                    fabric_meta.get_latest_loader_version(client),
+                    fabric_meta.get_latest_installer_version(client),
+                )
+        else:
+            latest_loader = latest_installer = None
 
         with console.status("[cyan]Identifying mods via Modrinth…[/cyan]"):
             await modrinth_mod.identify_mods_by_hash(client, mods)
@@ -134,16 +137,19 @@ async def _gather_update_info(
         with console.status("[cyan]Checking for mod updates…[/cyan]"):
             latest_versions = await modrinth_mod.get_latest_versions(client, mods, config.minecraft_version)
 
-    fabric_jar_url = fabric_meta.get_server_jar_url(
-        config.minecraft_version, latest_loader, latest_installer
-    )
+    if config.mode == "server":
+        fabric_jar_url = fabric_meta.get_server_jar_url(
+            config.minecraft_version, latest_loader, latest_installer
+        )
+    else:
+        fabric_jar_url = None
 
     plan = update_planner.build_plan(
         mods=mods,
         latest_versions=latest_versions,
-        current_loader=config.fabric_loader_version,
+        current_loader=config.fabric_loader_version or None,
         latest_loader=latest_loader,
-        current_installer=config.fabric_installer_version,
+        current_installer=config.fabric_installer_version or None,
         latest_installer=latest_installer,
         mc_version=config.minecraft_version,
         fabric_jar_url=fabric_jar_url,
@@ -377,10 +383,12 @@ async def cmd_config(args: argparse.Namespace, config: cfg_module.Config) -> Non
     table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
     table.add_column(style="bold cyan")
     table.add_column()
+    table.add_row("mode", config.mode)
     table.add_row("server_dir", str(config.server_dir))
     table.add_row("minecraft_version", config.minecraft_version)
-    table.add_row("fabric_loader_version", config.fabric_loader_version)
-    table.add_row("fabric_installer_version", config.fabric_installer_version)
+    if config.mode == "server":
+        table.add_row("fabric_loader_version", config.fabric_loader_version)
+        table.add_row("fabric_installer_version", config.fabric_installer_version)
     table.add_row("backup_dir", str(config.backup_dir))
     table.add_row("user_agent", config.user_agent)
     if config.overrides:

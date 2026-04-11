@@ -14,7 +14,9 @@ pip install -r requirements.txt
 python updater.py
 ```
 
-On first run you'll be prompted for your server directory. Config is saved to `updater_config.json`.
+On first run you'll be prompted for your target type (server or client instance) and directory. Config is saved to `updater_config.json`.
+
+For **Prism/MultiMC client instances**, point to the `.minecraft` directory inside the instance folder. The MC version will be auto-detected from `mmc-pack.json` if present.
 
 ## Usage
 
@@ -30,6 +32,14 @@ python updater.py config             # show current config
 ```
 
 Global flags: `--dry-run`, `--server-dir PATH`, `--no-color`
+
+## Adding Mods
+
+```bash
+python add_mod.py fabric-api          # by slug
+python add_mod.py P7dR8mSH            # by Modrinth project ID
+python add_mod.py fabric-api --yes    # skip confirmation
+```
 
 ## Notes
 

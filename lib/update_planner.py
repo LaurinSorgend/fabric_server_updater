@@ -44,31 +44,32 @@ class UpdatePlan:
 def build_plan(
     mods: list[ModInfo],
     latest_versions: dict[str, dict],   # sha512 -> version_object from Modrinth
-    current_loader: str,
-    latest_loader: str,
-    current_installer: str,
-    latest_installer: str,
-    mc_version: str,
-    fabric_jar_url: str,
+    current_loader: str | None = None,
+    latest_loader: str | None = None,
+    current_installer: str | None = None,
+    latest_installer: str | None = None,
+    mc_version: str = "",
+    fabric_jar_url: str | None = None,
     compat_results: dict[str, bool] | None = None,
     candidate_mc_version: str | None = None,
 ) -> UpdatePlan:
     """
     Pure function. Combines all gathered data into an UpdatePlan.
-    No I/O.
+    No I/O. Pass fabric params as None for client (non-server) mode.
     """
-    fabric_is_update = (
-        current_loader != latest_loader or current_installer != latest_installer
-    )
-    fabric_update = FabricUpdate(
-        current_loader=current_loader,
-        latest_loader=latest_loader,
-        current_installer=current_installer,
-        latest_installer=latest_installer,
-        mc_version=mc_version,
-        download_url=fabric_jar_url,
-        is_update=fabric_is_update,
-    )
+    if all(x is not None for x in [current_loader, latest_loader, current_installer, latest_installer, fabric_jar_url]):
+        fabric_is_update = current_loader != latest_loader or current_installer != latest_installer
+        fabric_update: Optional[FabricUpdate] = FabricUpdate(
+            current_loader=current_loader,
+            latest_loader=latest_loader,
+            current_installer=current_installer,
+            latest_installer=latest_installer,
+            mc_version=mc_version,
+            download_url=fabric_jar_url,
+            is_update=fabric_is_update,
+        )
+    else:
+        fabric_update = None
 
     mod_updates: list[ModUpdate] = []
     unknown_mods: list[ModInfo] = []
