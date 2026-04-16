@@ -256,71 +256,79 @@ async def cmd_check(args: argparse.Namespace, config: cfg_module.Config) -> None
     _summarise_plan(plan)
 
 
+async def _prompt_update_selection(
+    plan: UpdatePlan,
+    yes: bool,
+    fabric_only: bool = False,
+    mods_only: bool = False,
+) -> tuple[bool, list[ModUpdate]] | None:
+    """Return (update_fabric, selected_mods), or None if cancelled/nothing to do."""
+    available_mods = plan.available_mod_updates
+    fabric_available = plan.fabric_update and plan.fabric_update.is_update
+
+    if yes:
+        update_fabric = (not mods_only) and bool(fabric_available)
+        selected = [] if fabric_only else available_mods
+        if not selected and not update_fabric:
+            return None
+        return update_fabric, selected
+
+    import questionary
+
+    choices_fabric = []
+    if not mods_only and fabric_available:
+        fu = plan.fabric_update
+        choices_fabric = [questionary.Choice(
+            title=f"Fabric Loader {fu.current_loader} → {fu.latest_loader}"
+                  f"  /  Installer {fu.current_installer} → {fu.latest_installer}",
+            value="fabric",
+            checked=True,
+        )]
+
+    choices_mods = [] if fabric_only else [
+        questionary.Choice(
+            title=f"{mu.mod.mod_name}  {mu.mod.installed_version} → {mu.latest_version_number}",
+            value=mu,
+            checked=True,
+        )
+        for mu in available_mods
+    ]
+
+    all_choices = choices_fabric + choices_mods
+    if not all_choices:
+        return None
+
+    selected_values = await questionary.checkbox(
+        "Select updates to apply:", choices=all_choices
+    ).ask_async()
+
+    if not selected_values:
+        return None
+
+    update_fabric = "fabric" in selected_values
+    selected = [v for v in selected_values if isinstance(v, update_planner.ModUpdate)]
+    return update_fabric, selected
+
+
 async def cmd_update(
     args: argparse.Namespace,
     config: cfg_module.Config,
     fabric_only: bool = False,
     mods_only: bool = False,
 ) -> None:
-    plan, mods = await _gather_update_info(config)
+    plan, _ = await _gather_update_info(config)
     _print_update_table(plan)
     _summarise_plan(plan)
 
-    available_mods = plan.available_mod_updates
-    fabric_available = plan.fabric_update and plan.fabric_update.is_update
-
-    if not available_mods and not fabric_available:
+    if not plan.available_mod_updates and not (plan.fabric_update and plan.fabric_update.is_update):
         return
 
-    if args.yes:
-        update_fabric = (not mods_only) and bool(fabric_available)
-        selected = [] if fabric_only else available_mods
-    else:
-        import questionary
-
-        choices_fabric = []
-        if not mods_only and fabric_available:
-            fu = plan.fabric_update
-            choices_fabric = [
-                questionary.Choice(
-                    title=f"Fabric Loader {fu.current_loader} → {fu.latest_loader}  /  Installer {fu.current_installer} → {fu.latest_installer}",
-                    value="fabric",
-                    checked=True,
-                )
-            ]
-
-        choices_mods = []
-        if not fabric_only:
-            choices_mods = [
-                questionary.Choice(
-                    title=f"{mu.mod.mod_name}  {mu.mod.installed_version} → {mu.latest_version_number}",
-                    value=mu,
-                    checked=True,
-                )
-                for mu in available_mods
-            ]
-
-        all_choices = choices_fabric + choices_mods
-        if not all_choices:
-            console.print("[dim]Nothing to update.[/dim]")
-            return
-
-        selected_values = await questionary.checkbox(
-            "Select updates to apply:",
-            choices=all_choices,
-        ).ask_async()
-
-        if not selected_values:
-            console.print("[yellow]No updates selected. Exiting.[/yellow]")
-            return
-
-        update_fabric = "fabric" in selected_values
-        selected = [v for v in selected_values if isinstance(v, update_planner.ModUpdate)]
-
-    if not selected and not update_fabric:
-        console.print("[dim]Nothing selected.[/dim]")
+    result = await _prompt_update_selection(plan, args.yes, fabric_only, mods_only)
+    if result is None:
+        console.print("[yellow]No updates selected. Exiting.[/yellow]")
         return
 
+    update_fabric, selected = result
     await _apply_updates(config, plan, update_fabric, selected, dry_run=args.dry_run)
 
 
@@ -379,6 +387,40 @@ async def cmd_check_mc(args: argparse.Namespace, config: cfg_module.Config) -> N
         console.print(f"[green]All known mods support MC {candidate}.[/green]")
 
 
+async def cmd_update_mc(args: argparse.Namespace, config: cfg_module.Config) -> None:
+    target = args.version
+    if target == config.minecraft_version:
+        console.print(f"[yellow]Already on MC {target}.[/yellow]")
+        return
+
+    console.print(
+        f"\n[bold]Upgrading MC {config.minecraft_version} → {target}[/bold]\n"
+    )
+    config.minecraft_version = target  # persisted only on successful apply
+
+    plan, _ = await _gather_update_info(config)
+
+    # Force fabric JAR download — its filename embeds the MC version even when
+    # loader/installer versions haven't changed.
+    if plan.fabric_update and not plan.fabric_update.is_update:
+        plan.fabric_update.is_update = True
+
+    _print_update_table(plan)
+    _summarise_plan(plan)
+
+    result = await _prompt_update_selection(plan, args.yes)
+    if result is None:
+        console.print("[yellow]No updates selected. Exiting.[/yellow]")
+        return
+
+    update_fabric, selected = result
+    await _apply_updates(config, plan, update_fabric, selected, dry_run=args.dry_run)
+
+    if not args.dry_run:
+        config.save()  # ensure new minecraft_version is persisted even if fabric was skipped
+        console.print(f"[bold green]Minecraft version set to {target} in config.[/bold green]")
+
+
 async def cmd_config(args: argparse.Namespace, config: cfg_module.Config) -> None:
     table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
     table.add_column(style="bold cyan")
@@ -430,6 +472,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mark a mod file as compatible (can be used multiple times)",
     )
 
+    umc = sub.add_parser("update-mc", help="Switch to a new MC version and update all mods + Fabric JAR")
+    umc.add_argument("version", help="Target Minecraft version, e.g. 1.21.4")
+
     sub.add_parser("config", help="Show current configuration")
 
     return parser
@@ -448,6 +493,8 @@ async def main(args: argparse.Namespace, config: cfg_module.Config) -> None:
         await cmd_update(args, config, mods_only=True)
     elif command == "check-mc":
         await cmd_check_mc(args, config)
+    elif command == "update-mc":
+        await cmd_update_mc(args, config)
     elif command == "config":
         await cmd_config(args, config)
     else:
