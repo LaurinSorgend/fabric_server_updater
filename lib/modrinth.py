@@ -9,18 +9,25 @@ import httpx
 from .mod_scanner import ModInfo
 
 BASE = "https://api.modrinth.com/v2"
-_SEMAPHORE = asyncio.Semaphore(5)
+_SEMAPHORE: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _SEMAPHORE
+    if _SEMAPHORE is None:
+        _SEMAPHORE = asyncio.Semaphore(5)
+    return _SEMAPHORE
 
 
 async def _get(client: httpx.AsyncClient, url: str, **kwargs) -> Any:
-    async with _SEMAPHORE:
+    async with _get_semaphore():
         resp = await client.get(url, **kwargs)
         resp.raise_for_status()
         return resp.json()
 
 
 async def _post(client: httpx.AsyncClient, url: str, **kwargs) -> Any:
-    async with _SEMAPHORE:
+    async with _get_semaphore():
         resp = await client.post(url, **kwargs)
         resp.raise_for_status()
         return resp.json()
