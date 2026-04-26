@@ -242,7 +242,7 @@ async def _apply_updates(
                     console.print(f"[green]✓[/green] {mu.mod.mod_name} → {mu.latest_version_number}")
                 except ValueError as e:
                     console.print(f"[red]✗ Hash verification failed for {mu.mod.mod_name}:[/red] {e}")
-                except Exception as e:
+                except (httpx.HTTPError, OSError) as e:
                     console.print(f"[red]✗ Failed to download {mu.mod.mod_name}:[/red] {e}")
 
 

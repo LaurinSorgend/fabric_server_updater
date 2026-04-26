@@ -24,10 +24,11 @@ async def get_latest_loader_version(client: httpx.AsyncClient) -> str:
 async def get_latest_installer_version(client: httpx.AsyncClient) -> tuple[str, str]:
     resp = await client.get(f"{BASE}/versions/installer")
     resp.raise_for_status()
-    for entry in resp.json():
+    entries = resp.json()
+    for entry in entries:
         if entry.get("stable"):
             return entry["version"], entry["url"]
-    entry = resp.json()[0]
+    entry = entries[0]
     return entry["version"], entry["url"]
 
 

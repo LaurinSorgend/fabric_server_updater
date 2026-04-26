@@ -9,13 +9,14 @@ import httpx
 from .mod_scanner import ModInfo
 
 BASE = "https://api.modrinth.com/v2"
+_MAX_CONCURRENT_REQUESTS = 5
 _SEMAPHORE: asyncio.Semaphore | None = None
 
 
 def _get_semaphore() -> asyncio.Semaphore:
     global _SEMAPHORE
     if _SEMAPHORE is None:
-        _SEMAPHORE = asyncio.Semaphore(5)
+        _SEMAPHORE = asyncio.Semaphore(_MAX_CONCURRENT_REQUESTS)
     return _SEMAPHORE
 
 

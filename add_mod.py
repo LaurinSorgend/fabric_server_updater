@@ -46,7 +46,7 @@ async def resolve_mods(
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]✗ '{slug}' not found on Modrinth[/red] ({e.response.status_code})")
                 continue
-            except Exception as e:
+            except (httpx.HTTPError, KeyError) as e:
                 console.print(f"[red]✗ Could not fetch '{slug}':[/red] {e}")
                 continue
 
@@ -95,7 +95,7 @@ async def download_mods(
                 console.print(f"[green]✓[/green] Installed [bold]{project['title']}[/bold] → {dest.name}")
             except ValueError as e:
                 console.print(f"[red]✗ Hash mismatch for {project['title']}:[/red] {e}")
-            except Exception as e:
+            except (httpx.HTTPError, OSError) as e:
                 console.print(f"[red]✗ Failed to download {project['title']}:[/red] {e}")
 
 

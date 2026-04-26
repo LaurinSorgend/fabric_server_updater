@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
+
+_HASH_CHUNK_SIZE = 1 << 20  # 1 MiB
 
 
 @dataclass
@@ -15,7 +17,6 @@ class ModInfo:
     mod_id: str
     mod_name: str
     installed_version: str
-    sha1: str
     sha512: str
     modrinth_project_id: Optional[str] = None
     modrinth_version_id: Optional[str] = None
@@ -23,12 +24,12 @@ class ModInfo:
     homepage: Optional[str] = None
 
 
-def _compute_hashes(path: Path) -> tuple[str, str]:
-    data = path.read_bytes()
-    return (
-        hashlib.sha1(data).hexdigest(),
-        hashlib.sha512(data).hexdigest(),
-    )
+def _compute_sha512(path: Path) -> str:
+    hasher = hashlib.sha512()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(_HASH_CHUNK_SIZE), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 def _extract_mod_json(jar_path: Path) -> dict | None:
@@ -36,9 +37,7 @@ def _extract_mod_json(jar_path: Path) -> dict | None:
         with zipfile.ZipFile(jar_path) as zf:
             if "fabric.mod.json" in zf.namelist():
                 return json.loads(zf.read("fabric.mod.json"))
-    except zipfile.BadZipFile:
-        return None
-    except Exception:
+    except (zipfile.BadZipFile, KeyError, json.JSONDecodeError, OSError):
         return None
     return None
 
@@ -64,7 +63,7 @@ def scan_mods(server_dir: Path, overrides: dict[str, str] | None = None) -> list
         if jar.is_relative_to(server_dir / "backups"):
             continue
 
-        sha1, sha512 = _compute_hashes(jar)
+        sha512 = _compute_sha512(jar)
         meta = _extract_mod_json(jar)
 
         if meta is None:
@@ -74,7 +73,6 @@ def scan_mods(server_dir: Path, overrides: dict[str, str] | None = None) -> list
                 mod_id="unknown",
                 mod_name=jar.stem,
                 installed_version="unknown",
-                sha1=sha1,
                 sha512=sha512,
                 homepage=None,
             )
@@ -85,7 +83,6 @@ def scan_mods(server_dir: Path, overrides: dict[str, str] | None = None) -> list
                 mod_id=meta.get("id", "unknown"),
                 mod_name=meta.get("name", jar.stem),
                 installed_version=meta.get("version", "unknown"),
-                sha1=sha1,
                 sha512=sha512,
                 homepage=_get_homepage(meta),
             )
