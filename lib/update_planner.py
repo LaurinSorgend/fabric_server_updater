@@ -43,7 +43,7 @@ class UpdatePlan:
 
 def build_plan(
     mods: list[ModInfo],
-    latest_versions: dict[str, dict],   # sha512 -> version_object from Modrinth
+    latest_versions: dict[str, dict],  # sha512 -> version_object from Modrinth
     current_loader: str | None = None,
     latest_loader: str | None = None,
     current_installer: str | None = None,
@@ -57,8 +57,19 @@ def build_plan(
     Pure function. Combines all gathered data into an UpdatePlan.
     No I/O. Pass fabric params as None for client (non-server) mode.
     """
-    if all(x is not None for x in [current_loader, latest_loader, current_installer, latest_installer, fabric_jar_url]):
-        fabric_is_update = current_loader != latest_loader or current_installer != latest_installer
+    if all(
+        x is not None
+        for x in [
+            current_loader,
+            latest_loader,
+            current_installer,
+            latest_installer,
+            fabric_jar_url,
+        ]
+    ):
+        fabric_is_update = (
+            current_loader != latest_loader or current_installer != latest_installer
+        )
         fabric_update: Optional[FabricUpdate] = FabricUpdate(
             current_loader=current_loader,
             latest_loader=latest_loader,
@@ -100,7 +111,9 @@ def build_plan(
 
         # Get primary file info
         files = latest.get("files", [])
-        primary = next((f for f in files if f.get("primary")), files[0] if files else {})
+        primary = next(
+            (f for f in files if f.get("primary")), files[0] if files else {}
+        )
         download_url = primary.get("url", "")
         file_sha512 = primary.get("hashes", {}).get("sha512", "")
 

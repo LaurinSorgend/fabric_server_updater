@@ -131,7 +131,9 @@ async def check_mc_compat(
     For each Modrinth mod, check if any version exists for candidate_mc_version.
     Returns dict mapping modrinth_project_id -> bool (True = compatible).
     """
-    modrinth_mods = [m for m in mods if m.source == "modrinth" and m.modrinth_project_id]
+    modrinth_mods = [
+        m for m in mods if m.source == "modrinth" and m.modrinth_project_id
+    ]
     if not modrinth_mods:
         return {}
 

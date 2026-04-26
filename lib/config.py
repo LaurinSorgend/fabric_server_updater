@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -109,7 +109,9 @@ def create_config_interactively(config_path: Path = CONFIG_FILE) -> Config:
         "What are you updating?",
         choices=[
             questionary.Choice("Fabric server", value="server"),
-            questionary.Choice("Modded client instance (Prism, MultiMC, …)", value="client"),
+            questionary.Choice(
+                "Modded client instance (Prism, MultiMC, …)", value="client"
+            ),
         ],
     ).ask()
 
@@ -134,12 +136,20 @@ def create_config_interactively(config_path: Path = CONFIG_FILE) -> Config:
         versions = detect_fabric_versions(instance_dir)
         if versions:
             mc, loader, installer = versions
-            console.print(f"[green]Detected:[/green] MC {mc}, Loader {loader}, Installer {installer}")
+            console.print(
+                f"[green]Detected:[/green] MC {mc}, Loader {loader}, Installer {installer}"
+            )
         else:
-            console.print("[yellow]Could not auto-detect versions from server JAR filename.[/yellow]")
+            console.print(
+                "[yellow]Could not auto-detect versions from server JAR filename.[/yellow]"
+            )
             mc = questionary.text("Minecraft version (e.g. 1.21.1):").ask() or ""
-            loader = questionary.text("Fabric loader version (e.g. 0.16.0):").ask() or ""
-            installer = questionary.text("Fabric installer version (e.g. 1.0.1):").ask() or ""
+            loader = (
+                questionary.text("Fabric loader version (e.g. 0.16.0):").ask() or ""
+            )
+            installer = (
+                questionary.text("Fabric installer version (e.g. 1.0.1):").ask() or ""
+            )
         cfg = Config(
             server_dir=instance_dir,
             minecraft_version=mc,

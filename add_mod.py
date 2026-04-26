@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Add mods from Modrinth to your Fabric server by project ID or slug."""
+
 from __future__ import annotations
 
 import argparse
@@ -9,7 +10,14 @@ from pathlib import Path
 
 import httpx
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, DownloadColumn, TransferSpeedColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    DownloadColumn,
+    TransferSpeedColumn,
+)
 
 from lib import config as cfg_module
 from lib import modrinth as modrinth_mod
@@ -42,9 +50,13 @@ async def resolve_mods(
         with console.status(f"[cyan]Looking up {slug}…[/cyan]"):
             try:
                 project = await modrinth_mod.get_project(client, slug)
-                version = await modrinth_mod.get_latest_version_for_project(client, slug, mc_version)
+                version = await modrinth_mod.get_latest_version_for_project(
+                    client, slug, mc_version
+                )
             except httpx.HTTPStatusError as e:
-                console.print(f"[red]✗ '{slug}' not found on Modrinth[/red] ({e.response.status_code})")
+                console.print(
+                    f"[red]✗ '{slug}' not found on Modrinth[/red] ({e.response.status_code})"
+                )
                 continue
             except (httpx.HTTPError, KeyError) as e:
                 console.print(f"[red]✗ Could not fetch '{slug}':[/red] {e}")
@@ -59,7 +71,9 @@ async def resolve_mods(
 
         file = _primary_file(version)
         if file is None:
-            console.print(f"[red]✗ No downloadable file for '{project['title']}'.[/red]")
+            console.print(
+                f"[red]✗ No downloadable file for '{project['title']}'.[/red]"
+            )
             continue
 
         console.print(
@@ -88,15 +102,23 @@ async def download_mods(
             file = _primary_file(version)
             dest = mods_dir / file["filename"]
             sha512 = file.get("hashes", {}).get("sha512", "")
-            task = progress.add_task(f"{project['title']} {version['version_number']}", total=None)
+            task = progress.add_task(
+                f"{project['title']} {version['version_number']}", total=None
+            )
 
             try:
-                await dl_mod.download_file(client, file["url"], dest, sha512, progress, task)
-                console.print(f"[green]✓[/green] Installed [bold]{project['title']}[/bold] → {dest.name}")
+                await dl_mod.download_file(
+                    client, file["url"], dest, sha512, progress, task
+                )
+                console.print(
+                    f"[green]✓[/green] Installed [bold]{project['title']}[/bold] → {dest.name}"
+                )
             except ValueError as e:
                 console.print(f"[red]✗ Hash mismatch for {project['title']}:[/red] {e}")
             except (httpx.HTTPError, OSError) as e:
-                console.print(f"[red]✗ Failed to download {project['title']}:[/red] {e}")
+                console.print(
+                    f"[red]✗ Failed to download {project['title']}:[/red] {e}"
+                )
 
 
 async def main(args: argparse.Namespace, config: cfg_module.Config) -> None:
@@ -104,14 +126,19 @@ async def main(args: argparse.Namespace, config: cfg_module.Config) -> None:
     mods_dir.mkdir(parents=True, exist_ok=True)
 
     async with _make_client(config.user_agent) as client:
-        to_download = await resolve_mods(client, args.project_ids, config.minecraft_version)
+        to_download = await resolve_mods(
+            client, args.project_ids, config.minecraft_version
+        )
 
         if not to_download:
             return
 
         if not args.yes:
             import questionary
-            ok = await questionary.confirm("Download and install these mods?", default=True).ask_async()
+
+            ok = await questionary.confirm(
+                "Download and install these mods?", default=True
+            ).ask_async()
             if not ok:
                 console.print("[yellow]Cancelled.[/yellow]")
                 return
@@ -130,15 +157,21 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PROJECT",
         help="Modrinth project ID or slug (e.g. 'fabric-api' or 'P7dR8mSH')",
     )
-    parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
-    parser.add_argument("--no-color", action="store_true", help="Disable colored output")
+    parser.add_argument(
+        "--yes", "-y", action="store_true", help="Skip confirmation prompt"
+    )
+    parser.add_argument(
+        "--no-color", action="store_true", help="Disable colored output"
+    )
     parser.add_argument(
         "--config-file",
         metavar="PATH",
         default=str(cfg_module.CONFIG_FILE),
         help="Config file path (default: updater_config.json)",
     )
-    parser.add_argument("--server-dir", metavar="PATH", help="Override server directory")
+    parser.add_argument(
+        "--server-dir", metavar="PATH", help="Override server directory"
+    )
     return parser
 
 

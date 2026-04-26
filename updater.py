@@ -5,13 +5,19 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
 
 import httpx
 from rich.console import Console
 from rich.table import Table
 from rich import box
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, DownloadColumn, TransferSpeedColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    DownloadColumn,
+    TransferSpeedColumn,
+)
 
 from lib import config as cfg_module
 from lib import fabric_meta
@@ -27,7 +33,9 @@ console = Console()
 _START_SCRIPT_NAMES = ("start.sh", "start.bat", "run.sh", "run.bat")
 
 
-def _patch_start_scripts(server_dir: Path, old_jar_name: str | None, new_jar_name: str) -> None:
+def _patch_start_scripts(
+    server_dir: Path, old_jar_name: str | None, new_jar_name: str
+) -> None:
     if not old_jar_name or old_jar_name == new_jar_name:
         return
     for script_name in _START_SCRIPT_NAMES:
@@ -38,7 +46,9 @@ def _patch_start_scripts(server_dir: Path, old_jar_name: str | None, new_jar_nam
         if old_jar_name not in text:
             continue
         script.write_text(text.replace(old_jar_name, new_jar_name), encoding="utf-8")
-        console.print(f"[dim]Updated {script_name}: {old_jar_name} → {new_jar_name}[/dim]")
+        console.print(
+            f"[dim]Updated {script_name}: {old_jar_name} → {new_jar_name}[/dim]"
+        )
 
 
 def _make_client(user_agent: str) -> httpx.AsyncClient:
@@ -49,56 +59,67 @@ def _make_client(user_agent: str) -> httpx.AsyncClient:
     )
 
 
+def _status_tag(changed: bool) -> str:
+    return "[green]UPDATE[/green]" if changed else "[dim]OK[/dim]"
+
+
+def _print_fabric_section(fu) -> None:
+    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 1))
+    table.add_column(style="bold")
+    table.add_column()
+    table.add_column()
+    table.add_column()
+    table.add_row(
+        "Fabric Loader",
+        fu.current_loader,
+        f"→  {fu.latest_loader}",
+        _status_tag(fu.current_loader != fu.latest_loader),
+    )
+    table.add_row(
+        "Fabric Installer",
+        fu.current_installer,
+        f"→  {fu.latest_installer}",
+        _status_tag(fu.current_installer != fu.latest_installer),
+    )
+    console.print("\n[bold]Fabric Server JAR[/bold]")
+    console.print(table)
+
+
+def _print_mods_section(mod_updates: list[ModUpdate]) -> None:
+    table = Table(box=box.ROUNDED, padding=(0, 1))
+    table.add_column("Mod", style="bold")
+    table.add_column("Installed")
+    table.add_column("Latest")
+    table.add_column("Status")
+    for mu in sorted(mod_updates, key=lambda x: x.mod.mod_name.lower()):
+        latest = (
+            mu.latest_version_number
+            if mu.is_update
+            else (mu.latest_version_number or mu.mod.installed_version)
+        )
+        table.add_row(
+            mu.mod.mod_name, mu.mod.installed_version, latest, _status_tag(mu.is_update)
+        )
+    console.print("\n[bold]Mods[/bold]")
+    console.print(table)
+
+
+def _print_unknown_section(unknown: list[mod_scanner.ModInfo]) -> None:
+    console.print(
+        f"\n[yellow]{len(unknown)} mod(s) not from Modrinth (skipped):[/yellow]"
+    )
+    for m in unknown:
+        hp = f"  [dim]{m.homepage}[/dim]" if m.homepage else ""
+        console.print(f"  [dim]{m.mod_name}[/dim]{hp}")
+
+
 def _print_update_table(plan: UpdatePlan) -> None:
-    # Fabric section
     if plan.fabric_update:
-        fu = plan.fabric_update
-        fab_table = Table(box=box.ROUNDED, show_header=False, padding=(0, 1))
-        fab_table.add_column(style="bold")
-        fab_table.add_column()
-        fab_table.add_column()
-        fab_table.add_column()
-
-        loader_status = "[green]UPDATE[/green]" if fu.current_loader != fu.latest_loader else "[dim]OK[/dim]"
-        inst_status = "[green]UPDATE[/green]" if fu.current_installer != fu.latest_installer else "[dim]OK[/dim]"
-
-        fab_table.add_row("Fabric Loader", fu.current_loader, f"→  {fu.latest_loader}", loader_status)
-        fab_table.add_row("Fabric Installer", fu.current_installer, f"→  {fu.latest_installer}", inst_status)
-
-        console.print("\n[bold]Fabric Server JAR[/bold]")
-        console.print(fab_table)
-
-    # Mods section
+        _print_fabric_section(plan.fabric_update)
     if plan.mod_updates:
-        mod_table = Table(box=box.ROUNDED, padding=(0, 1))
-        mod_table.add_column("Mod", style="bold")
-        mod_table.add_column("Installed")
-        mod_table.add_column("Latest")
-        mod_table.add_column("Status")
-
-        for mu in sorted(plan.mod_updates, key=lambda x: x.mod.mod_name.lower()):
-            if mu.is_update:
-                status = "[green]UPDATE[/green]"
-                latest = mu.latest_version_number
-            else:
-                status = "[dim]OK[/dim]"
-                latest = mu.latest_version_number or mu.mod.installed_version
-
-            mod_table.add_row(
-                mu.mod.mod_name,
-                mu.mod.installed_version,
-                latest,
-                status,
-            )
-
-        console.print("\n[bold]Mods[/bold]")
-        console.print(mod_table)
-
+        _print_mods_section(plan.mod_updates)
     if plan.unknown_mods:
-        console.print(f"\n[yellow]{len(plan.unknown_mods)} mod(s) not from Modrinth (skipped):[/yellow]")
-        for m in plan.unknown_mods:
-            hp = f"  [dim]{m.homepage}[/dim]" if m.homepage else ""
-            console.print(f"  [dim]{m.mod_name}[/dim]{hp}")
+        _print_unknown_section(plan.unknown_mods)
 
 
 def _summarise_plan(plan: UpdatePlan) -> None:
@@ -124,7 +145,10 @@ async def _gather_update_info(
     async with _make_client(config.user_agent) as client:
         if config.mode == "server":
             with console.status("[cyan]Fetching Fabric meta…[/cyan]"):
-                latest_loader, (latest_installer, _installer_url) = await asyncio.gather(
+                (
+                    latest_loader,
+                    (latest_installer, _installer_url),
+                ) = await asyncio.gather(
                     fabric_meta.get_latest_loader_version(client),
                     fabric_meta.get_latest_installer_version(client),
                 )
@@ -135,7 +159,9 @@ async def _gather_update_info(
             await modrinth_mod.identify_mods_by_hash(client, mods)
 
         with console.status("[cyan]Checking for mod updates…[/cyan]"):
-            latest_versions = await modrinth_mod.get_latest_versions(client, mods, config.minecraft_version)
+            latest_versions = await modrinth_mod.get_latest_versions(
+                client, mods, config.minecraft_version
+            )
 
     if config.mode == "server":
         fabric_jar_url = fabric_meta.get_server_jar_url(
@@ -157,6 +183,109 @@ async def _gather_update_info(
     return plan, mods
 
 
+def _fabric_jar_name(fu) -> str:
+    return (
+        f"fabric-server-mc.{fu.mc_version}"
+        f"-loader.{fu.latest_loader}"
+        f"-launcher.{fu.latest_installer}.jar"
+    )
+
+
+def _print_dry_run(
+    config: cfg_module.Config,
+    plan: UpdatePlan,
+    update_fabric: bool,
+    selected_mod_updates: list[ModUpdate],
+) -> None:
+    console.print("\n[yellow][DRY RUN] No files will be changed.[/yellow]")
+    if update_fabric and plan.fabric_update and plan.fabric_update.is_update:
+        old_jar = backup_mod.find_fabric_jar(config.server_dir)
+        new_jar_name = _fabric_jar_name(plan.fabric_update)
+        console.print(
+            f"  Would download Fabric JAR → {config.server_dir / new_jar_name}"
+        )
+        if old_jar:
+            console.print(f"  Would delete old JAR: {old_jar.name}")
+        for script_name in _START_SCRIPT_NAMES:
+            if (config.server_dir / script_name).exists():
+                console.print(
+                    f"  Would patch {script_name}: {old_jar.name if old_jar else '?'} → {new_jar_name}"
+                )
+    for mu in selected_mod_updates:
+        console.print(f"  Would update: {mu.mod.mod_name} → {mu.latest_version_number}")
+
+
+async def _apply_fabric_update(
+    client: httpx.AsyncClient,
+    config: cfg_module.Config,
+    fu,
+    fabric_jar: Path | None,
+    progress: Progress,
+) -> None:
+    jar_name = _fabric_jar_name(fu)
+    dest = config.server_dir / jar_name
+    task = progress.add_task(f"Fabric JAR ({jar_name})", total=None)
+    await dl_mod.download_file(client, fu.download_url, dest, "", progress, task)
+
+    if fabric_jar and fabric_jar.resolve() != dest.resolve():
+        fabric_jar.unlink(missing_ok=True)
+
+    _patch_start_scripts(
+        config.server_dir, fabric_jar.name if fabric_jar else None, jar_name
+    )
+
+    config.fabric_loader_version = fu.latest_loader
+    config.fabric_installer_version = fu.latest_installer
+    config.save()
+    console.print("[green]✓[/green] Fabric JAR updated.")
+
+
+async def _apply_mod_update(
+    client: httpx.AsyncClient,
+    mu: ModUpdate,
+    mods_dir: Path,
+    progress: Progress,
+) -> None:
+    if not mu.download_url:
+        console.print(
+            f"[yellow]⚠[/yellow] No download URL for {mu.mod.mod_name}, skipping."
+        )
+        return
+
+    url_filename = mu.download_url.split("?")[0].rsplit("/", 1)[-1]
+    dest = mods_dir / url_filename
+    task = progress.add_task(
+        f"{mu.mod.mod_name} {mu.latest_version_number}", total=None
+    )
+
+    try:
+        await dl_mod.download_file(
+            client, mu.download_url, dest, mu.file_sha512, progress, task
+        )
+        if mu.mod.path != dest and mu.mod.path.exists():
+            mu.mod.path.unlink()
+        console.print(
+            f"[green]✓[/green] {mu.mod.mod_name} → {mu.latest_version_number}"
+        )
+    except ValueError as e:
+        console.print(
+            f"[red]✗ Hash verification failed for {mu.mod.mod_name}:[/red] {e}"
+        )
+    except (httpx.HTTPError, OSError) as e:
+        console.print(f"[red]✗ Failed to download {mu.mod.mod_name}:[/red] {e}")
+
+
+def _progress_bar() -> Progress:
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        console=console,
+    )
+
+
 async def _apply_updates(
     config: cfg_module.Config,
     plan: UpdatePlan,
@@ -165,26 +294,12 @@ async def _apply_updates(
     dry_run: bool,
 ) -> None:
     if dry_run:
-        console.print("\n[yellow][DRY RUN] No files will be changed.[/yellow]")
-        if update_fabric and plan.fabric_update and plan.fabric_update.is_update:
-            fu = plan.fabric_update
-            old_jar = backup_mod.find_fabric_jar(config.server_dir)
-            new_jar_name = (
-                f"fabric-server-mc.{fu.mc_version}"
-                f"-loader.{fu.latest_loader}"
-                f"-launcher.{fu.latest_installer}.jar"
-            )
-            console.print(f"  Would download Fabric JAR → {config.server_dir / new_jar_name}")
-            if old_jar:
-                console.print(f"  Would delete old JAR: {old_jar.name}")
-            for script_name in _START_SCRIPT_NAMES:
-                if (config.server_dir / script_name).exists():
-                    console.print(f"  Would patch {script_name}: {old_jar.name if old_jar else '?'} → {new_jar_name}")
-        for mu in selected_mod_updates:
-            console.print(f"  Would update: {mu.mod.mod_name} → {mu.latest_version_number}")
+        _print_dry_run(config, plan, update_fabric, selected_mod_updates)
         return
 
-    fabric_jar = backup_mod.find_fabric_jar(config.server_dir) if update_fabric else None
+    fabric_jar = (
+        backup_mod.find_fabric_jar(config.server_dir) if update_fabric else None
+    )
     mod_paths = [mu.mod.path for mu in selected_mod_updates]
 
     if fabric_jar or mod_paths:
@@ -196,59 +311,23 @@ async def _apply_updates(
         )
         console.print(f"[dim]Backup created: {backup_path}[/dim]")
 
+    do_fabric = update_fabric and plan.fabric_update and plan.fabric_update.is_update
+    mods_dir = config.server_dir / "mods"
+
     async with _make_client(config.user_agent) as client:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            DownloadColumn(),
-            TransferSpeedColumn(),
-            console=console,
-        ) as progress:
-            if update_fabric and plan.fabric_update and plan.fabric_update.is_update:
-                fu = plan.fabric_update
-                jar_name = (
-                    f"fabric-server-mc.{fu.mc_version}"
-                    f"-loader.{fu.latest_loader}"
-                    f"-launcher.{fu.latest_installer}.jar"
+        with _progress_bar() as progress:
+            if do_fabric:
+                await _apply_fabric_update(
+                    client, config, plan.fabric_update, fabric_jar, progress
                 )
-                dest = config.server_dir / jar_name
-                task = progress.add_task(f"Fabric JAR ({jar_name})", total=None)
-                await dl_mod.download_file(client, fu.download_url, dest, "", progress, task)
-
-                if fabric_jar and fabric_jar.resolve() != dest.resolve():
-                    fabric_jar.unlink(missing_ok=True)
-
-                _patch_start_scripts(config.server_dir, fabric_jar.name if fabric_jar else None, jar_name)
-
-                config.fabric_loader_version = fu.latest_loader
-                config.fabric_installer_version = fu.latest_installer
-                config.save()
-                console.print(f"[green]✓[/green] Fabric JAR updated.")
-
             for mu in selected_mod_updates:
-                if not mu.download_url:
-                    console.print(f"[yellow]⚠[/yellow] No download URL for {mu.mod.mod_name}, skipping.")
-                    continue
-
-                url_filename = mu.download_url.split("?")[0].rsplit("/", 1)[-1]
-                dest = config.server_dir / "mods" / url_filename
-                task = progress.add_task(f"{mu.mod.mod_name} {mu.latest_version_number}", total=None)
-
-                try:
-                    await dl_mod.download_file(client, mu.download_url, dest, mu.file_sha512, progress, task)
-                    if mu.mod.path != dest and mu.mod.path.exists():
-                        mu.mod.path.unlink()
-                    console.print(f"[green]✓[/green] {mu.mod.mod_name} → {mu.latest_version_number}")
-                except ValueError as e:
-                    console.print(f"[red]✗ Hash verification failed for {mu.mod.mod_name}:[/red] {e}")
-                except (httpx.HTTPError, OSError) as e:
-                    console.print(f"[red]✗ Failed to download {mu.mod.mod_name}:[/red] {e}")
+                await _apply_mod_update(client, mu, mods_dir, progress)
 
 
 # ---------------------------------------------------------------------------
 # Sub-commands
 # ---------------------------------------------------------------------------
+
 
 async def cmd_check(args: argparse.Namespace, config: cfg_module.Config) -> None:
     plan, _ = await _gather_update_info(config)
@@ -278,21 +357,27 @@ async def _prompt_update_selection(
     choices_fabric = []
     if not mods_only and fabric_available:
         fu = plan.fabric_update
-        choices_fabric = [questionary.Choice(
-            title=f"Fabric Loader {fu.current_loader} → {fu.latest_loader}"
-                  f"  /  Installer {fu.current_installer} → {fu.latest_installer}",
-            value="fabric",
-            checked=True,
-        )]
+        choices_fabric = [
+            questionary.Choice(
+                title=f"Fabric Loader {fu.current_loader} → {fu.latest_loader}"
+                f"  /  Installer {fu.current_installer} → {fu.latest_installer}",
+                value="fabric",
+                checked=True,
+            )
+        ]
 
-    choices_mods = [] if fabric_only else [
-        questionary.Choice(
-            title=f"{mu.mod.mod_name}  {mu.mod.installed_version} → {mu.latest_version_number}",
-            value=mu,
-            checked=True,
-        )
-        for mu in available_mods
-    ]
+    choices_mods = (
+        []
+        if fabric_only
+        else [
+            questionary.Choice(
+                title=f"{mu.mod.mod_name}  {mu.mod.installed_version} → {mu.latest_version_number}",
+                value=mu,
+                checked=True,
+            )
+            for mu in available_mods
+        ]
+    )
 
     all_choices = choices_fabric + choices_mods
     if not all_choices:
@@ -320,7 +405,9 @@ async def cmd_update(
     _print_update_table(plan)
     _summarise_plan(plan)
 
-    if not plan.available_mod_updates and not (plan.fabric_update and plan.fabric_update.is_update):
+    if not plan.available_mod_updates and not (
+        plan.fabric_update and plan.fabric_update.is_update
+    ):
         return
 
     result = await _prompt_update_selection(plan, args.yes, fabric_only, mods_only)
@@ -339,10 +426,14 @@ async def cmd_check_mc(args: argparse.Namespace, config: cfg_module.Config) -> N
     async with _make_client(config.user_agent) as client:
         with console.status("[cyan]Identifying mods…[/cyan]"):
             await modrinth_mod.identify_mods_by_hash(client, mods)
-        with console.status(f"[cyan]Checking compatibility with MC {candidate}…[/cyan]"):
+        with console.status(
+            f"[cyan]Checking compatibility with MC {candidate}…[/cyan]"
+        ):
             compat = await modrinth_mod.check_mc_compat(client, mods, candidate)
 
-    console.print(f"\n[bold]MC Version Compatibility Check: {config.minecraft_version} → {candidate}[/bold]\n")
+    console.print(
+        f"\n[bold]MC Version Compatibility Check: {config.minecraft_version} → {candidate}[/bold]\n"
+    )
 
     table = Table(box=box.ROUNDED, padding=(0, 1))
     table.add_column("Mod", style="bold")
@@ -364,7 +455,9 @@ async def cmd_check_mc(args: argparse.Namespace, config: cfg_module.Config) -> N
             if supported:
                 table.add_row(mod.mod_name, "[green]✓[/green]", "")
             else:
-                table.add_row(mod.mod_name, "[red]✗[/red]", f"No version for {candidate}")
+                table.add_row(
+                    mod.mod_name, "[red]✗[/red]", f"No version for {candidate}"
+                )
                 blockers.append(mod)
         else:
             note = mod.homepage or "not on Modrinth"
@@ -418,7 +511,9 @@ async def cmd_update_mc(args: argparse.Namespace, config: cfg_module.Config) -> 
 
     if not args.dry_run:
         config.save()  # ensure new minecraft_version is persisted even if fabric was skipped
-        console.print(f"[bold green]Minecraft version set to {target} in config.[/bold green]")
+        console.print(
+            f"[bold green]Minecraft version set to {target} in config.[/bold green]"
+        )
 
 
 async def cmd_config(args: argparse.Namespace, config: cfg_module.Config) -> None:
@@ -447,13 +542,27 @@ def build_parser() -> argparse.ArgumentParser:
         prog="updater",
         description="Fabric server and mod updater",
     )
-    parser.add_argument("--server-dir", metavar="PATH", help="Override server directory")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be done, no downloads")
-    parser.add_argument("--yes", "-y", action="store_true", help="Apply all updates without prompting")
-    parser.add_argument("--no-color", action="store_true", help="Disable colored output")
-    parser.add_argument("--include-snapshots", action="store_true", help="Include snapshot MC versions")
-    parser.add_argument("--config-file", metavar="PATH", default=str(cfg_module.CONFIG_FILE),
-                        help="Config file path (default: updater_config.json)")
+    parser.add_argument(
+        "--server-dir", metavar="PATH", help="Override server directory"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be done, no downloads"
+    )
+    parser.add_argument(
+        "--yes", "-y", action="store_true", help="Apply all updates without prompting"
+    )
+    parser.add_argument(
+        "--no-color", action="store_true", help="Disable colored output"
+    )
+    parser.add_argument(
+        "--include-snapshots", action="store_true", help="Include snapshot MC versions"
+    )
+    parser.add_argument(
+        "--config-file",
+        metavar="PATH",
+        default=str(cfg_module.CONFIG_FILE),
+        help="Config file path (default: updater_config.json)",
+    )
 
     sub = parser.add_subparsers(dest="command")
 
@@ -472,7 +581,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mark a mod file as compatible (can be used multiple times)",
     )
 
-    umc = sub.add_parser("update-mc", help="Switch to a new MC version and update all mods + Fabric JAR")
+    umc = sub.add_parser(
+        "update-mc", help="Switch to a new MC version and update all mods + Fabric JAR"
+    )
     umc.add_argument("version", help="Target Minecraft version, e.g. 1.21.4")
 
     sub.add_parser("config", help="Show current configuration")

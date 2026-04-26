@@ -51,7 +51,9 @@ def _get_homepage(meta: dict) -> Optional[str]:
     return None
 
 
-def scan_mods(server_dir: Path, overrides: dict[str, str] | None = None) -> list[ModInfo]:
+def scan_mods(
+    server_dir: Path, overrides: dict[str, str] | None = None
+) -> list[ModInfo]:
     overrides = overrides or {}
     mods_dir = server_dir / "mods"
     if not mods_dir.is_dir():
